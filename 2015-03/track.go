@@ -6,13 +6,13 @@ import "fmt"
 type Track struct {
 	ID    int32
 	Name  string
-	Beats Beats
+	Beats Steps
 }
 
 // NewTrack creates a new Track instance.
 func NewTrack() *Track {
 	return &Track{
-		Beats: Beats{},
+		Beats: Steps{},
 	}
 }
 

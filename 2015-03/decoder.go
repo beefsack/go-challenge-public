@@ -106,8 +106,8 @@ func decodeTrack(r io.Reader) (t *Track, err error) {
 	return
 }
 
-func decodeBeats(r io.Reader) (b Beats, err error) {
-	b = Beats{}
+func decodeBeats(r io.Reader) (b Steps, err error) {
+	b = Steps{}
 	p := make([]byte, len(b))
 	if _, err = r.Read(p); err != nil {
 		if err != io.EOF {
