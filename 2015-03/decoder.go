@@ -3,11 +3,23 @@ package drum
 import (
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
+)
+
+const (
+	fileIdentifier       = "SPLICE"
+	widthIdentifierField = 14
+	widthVersion         = 32
+)
+
+// ErrIdentifierMissing is returned if the input to decoder doesn't match
+// what's expected.
+var ErrIdentifierMissing = fmt.Errorf(
+	"expected file to start with identifier '%s'",
+	fileIdentifier,
 )
 
 // DecodeFile decodes the drum machine file found at the provided path
@@ -49,18 +61,18 @@ func Decode(r io.Reader) (p *Pattern, err error) {
 
 func decodeHeader(r io.Reader) (version string, tempo float32, err error) {
 	// Check that the header is correct.
-	p := make([]byte, 14)
+	p := make([]byte, widthIdentifierField)
 	if _, err = r.Read(p); err != nil {
-		err = fmt.Errorf("unable to read header bytes, %v", err)
+		err = fmt.Errorf("unable to read identifier bytes, %v", err)
 		return
 	}
-	if string(p[:6]) != "SPLICE" {
-		err = errors.New("expected to start with 'SPLICE'")
+	if !bytes.HasPrefix(p, []byte(fileIdentifier)) {
+		err = ErrIdentifierMissing
 		return
 	}
 
 	// Read out the version.
-	p = make([]byte, 32)
+	p = make([]byte, widthVersion)
 	if _, err = r.Read(p); err != nil {
 		err = fmt.Errorf("unable to read version bytes, %v", err)
 		return
