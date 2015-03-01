@@ -10,16 +10,22 @@ import (
 )
 
 const (
-	fileIdentifier       = "SPLICE"
-	widthIdentifierField = 14
-	widthVersion         = 32
+	fileIdentifierText = "SPLICE"
+	widthHeaderField   = 10
+	widthVersion       = 32
 )
 
-// ErrIdentifierMissing is returned if the input to decoder doesn't match
+// FileIdentifier is what all valid Splice files should start with.
+var FileIdentifier = append(
+	[]byte(fileIdentifierText),
+	bytes.Repeat([]byte{0}, widthHeaderField-len(fileIdentifierText))...,
+)
+
+// ErrHeaderMissing is returned if the input to decoder doesn't match
 // what's expected.
-var ErrIdentifierMissing = fmt.Errorf(
+var ErrHeaderMissing = fmt.Errorf(
 	"expected file to start with identifier '%s'",
-	fileIdentifier,
+	string(FileIdentifier),
 )
 
 // DecodeFile decodes the drum machine file found at the provided path
@@ -40,14 +46,22 @@ func DecodeFile(path string) (*Pattern, error) {
 
 // Decode decodes a Pattern from a reader.
 func Decode(r io.Reader) (p *Pattern, err error) {
+	dataLen, err := DecodeHeader(r)
+	if err != nil {
+		err = fmt.Errorf("unable to decode identifier, %v", err)
+		return
+	}
+
+	lr := io.LimitReader(r, int64(dataLen))
+
 	p = NewPattern()
-	if p.Version, p.Tempo, err = decodeHeader(r); err != nil {
+	if p.Version, p.Tempo, err = DecodeMeta(lr); err != nil {
 		err = fmt.Errorf("unable to decode header, %v", err)
 		return
 	}
 	for {
 		var t *Track
-		if t, err = decodeTrack(r); err != nil {
+		if t, err = DecodeTrack(r); err != nil {
 			if err == io.EOF {
 				err = nil
 				break
@@ -59,20 +73,38 @@ func Decode(r io.Reader) (p *Pattern, err error) {
 	return
 }
 
-func decodeHeader(r io.Reader) (version string, tempo float32, err error) {
+// DecodeHeader checks the file identifier is present and gets the length
+// of the body in bytes.
+func DecodeHeader(r io.Reader) (dataLen int32, err error) {
 	// Check that the header is correct.
-	p := make([]byte, widthIdentifierField)
+	p := make([]byte, widthHeaderField)
 	if _, err = r.Read(p); err != nil {
 		err = fmt.Errorf("unable to read identifier bytes, %v", err)
 		return
 	}
-	if !bytes.HasPrefix(p, []byte(fileIdentifier)) {
-		err = ErrIdentifierMissing
+	if !bytes.Equal(p, FileIdentifier) {
+		fmt.Printf("%s\n%s", p, FileIdentifier)
+		err = ErrHeaderMissing
 		return
 	}
 
+	// Read out the length of the data.
+	// I'm not certain about the endianness as the others appear to be little,
+	// but it made sense to me the body length was larger than a byte and 10
+	// seems like a sensical size for the identifier.
+	// It would actually be possible for it to be a big endian int64 given the
+	// leading zeros, but I assumed everything was 32-bit if it's really from
+	// the 90s, though it could even be lower than that.
+	if err = binary.Read(r, binary.BigEndian, &dataLen); err != nil {
+		err = fmt.Errorf("unable to read body length, %v", err)
+	}
+	return
+}
+
+// DecodeMeta decodes the start of the body to find the version and tempo.
+func DecodeMeta(r io.Reader) (version string, tempo float32, err error) {
 	// Read out the version.
-	p = make([]byte, widthVersion)
+	p := make([]byte, widthVersion)
 	if _, err = r.Read(p); err != nil {
 		err = fmt.Errorf("unable to read version bytes, %v", err)
 		return
@@ -82,54 +114,6 @@ func decodeHeader(r io.Reader) (version string, tempo float32, err error) {
 	// Read out the tempo.
 	if err = binary.Read(r, binary.LittleEndian, &tempo); err != nil {
 		err = fmt.Errorf("unable to read tempo, %v", err)
-		return
 	}
-	return
-}
-
-func decodeTrack(r io.Reader) (t *Track, err error) {
-	t = NewTrack()
-
-	if binary.Read(r, binary.LittleEndian, &t.ID); err != nil {
-		if err != io.EOF {
-			err = fmt.Errorf("unable to read ID, %v", err)
-		}
-		return
-	}
-
-	var nLen byte
-	if binary.Read(r, binary.LittleEndian, &nLen); err != nil {
-		if err != io.EOF {
-			err = fmt.Errorf("unable to read name length, %v", err)
-		}
-		return
-	}
-
-	p := make([]byte, nLen)
-	if _, err = r.Read(p); err != nil {
-		if err != io.EOF {
-			err = fmt.Errorf("unable to read name, %v", err)
-		}
-		return
-	}
-	t.Name = string(p)
-
-	t.Beats, err = decodeBeats(r)
-	return
-}
-
-func decodeBeats(r io.Reader) (b Steps, err error) {
-	b = Steps{}
-	p := make([]byte, len(b))
-	if _, err = r.Read(p); err != nil {
-		if err != io.EOF {
-			err = fmt.Errorf("unable to read beats, %v", err)
-		}
-	}
-
-	for i, v := range p {
-		b[i] = v > 0
-	}
-
 	return
 }
