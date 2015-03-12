@@ -3,7 +3,9 @@ package drum
 import (
 	"bytes"
 	"encoding/hex"
+	"fmt"
 	"io/ioutil"
+	"log"
 	"path"
 	"testing"
 )
@@ -41,4 +43,45 @@ func TestPattern_Encode(t *testing.T) {
 			)
 		}
 	}
+}
+
+func ExampleAddCowbells() {
+	raw, err := ioutil.ReadFile(path.Join("fixtures", "pattern_2.splice"))
+	if err != nil {
+		log.Fatalf("unable to read file, %v", err)
+	}
+
+	decoded, err := Decode(bytes.NewBuffer(raw))
+	if err != nil {
+		log.Fatalf("unable to decode, %v", err)
+	}
+
+	if l := len(decoded.Tracks); l != 4 {
+		log.Fatalf("expected there to be 4 tracks, got %d", l)
+	}
+
+	// Add cowbells
+	for i := 0; i < 16; i += 4 {
+		decoded.Tracks[3].Steps[i] = true
+	}
+	decoded.Tracks[3].Steps[6] = true
+	decoded.Tracks[3].Steps[14] = true
+
+	pipe := bytes.NewBuffer([]byte{})
+	if err := decoded.Encode(pipe); err != nil {
+		log.Fatalf("unable to encode, %v", err)
+	}
+	redecoded, err := Decode(pipe)
+	if err != nil {
+		log.Fatalf("unable to decode for the second time, %v", err)
+	}
+
+	fmt.Print(redecoded)
+	// Output:
+	// Saved with HW Version: 0.808-alpha
+	// Tempo: 98.4
+	// (0) kick	|x---|----|x---|----|
+	// (1) snare	|----|x---|----|x---|
+	// (3) hh-open	|--x-|--x-|x-x-|--x-|
+	// (5) cowbell	|x---|x-x-|x---|x-x-|
 }
